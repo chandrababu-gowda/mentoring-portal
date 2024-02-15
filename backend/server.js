@@ -1,34 +1,60 @@
-// Get all the required packages
-var express = require("express");
-var bodyParser = require("body-parser");
-var handleMessage = require("./lib/handleMessage");
+require("dotenv").config();
 
-var app = express();
-app.use(bodyParser.urlencoded({ extended: true }));
-app.set("port", process.env.PORT || 3000);
+const app = require("./mentoringPortal");
+const port = process.env.port || 3000;
+const mongoose = require("mongoose");
 
-app.post("/message", (req, res) => {
-  handleMessage(req.body);
-  res.statusCode = 204;
-  res.end();
+// Connect to database
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => {
+    console.log(`Success: Connected to MongoDB Database`);
+  })
+  .catch((err) => {
+    console.log(`Error in server.js\n Unable to connect to database\n ${err}`);
+  });
+
+// Start the server
+app.listen(port, () => {
+  console.log(`Success: NodeJs server started on http://localhost:${port}`);
 });
 
-// Custom 404 page
-app.use((req, res) => {
-  res.status(404);
-  res.render("404");
-});
+// Terminate the server during uncaught exception
+app.use((req, res, next) => {
+  var domain = require("domain").create();
 
-// Custom 500 page
-app.use((err, req, res, next) => {
-  console.log(err.stack);
-  res.status(500);
-  res.render("500");
-});
+  domain.on("error", (err) => {
+    console.log(`Error in server.js \n Domain error caught \n ${err.stack}`);
 
-// Notify about the starting of the server
-app.listen(app.get("port"), () => {
-  console.log(
-    `Server started at the port https://localhost:${app.get("port")}`
-  );
+    try {
+      setTimeout(() => {
+        console.error("Failsafe shutdown");
+        process.exit(1);
+      }, 5000);
+
+      var worker = require("cluster").worker;
+
+      if (worker) {
+        worker.disconnect();
+      }
+
+      server.close();
+
+      try {
+        next(err);
+      } catch (err) {
+        console.error("Express error mechanism failed \n", err.stack);
+        res
+          .status(500)
+          .setHeader("content-type", "text/plain")
+          .end("Server error");
+      }
+    } catch (err) {
+      console.error("Unable to send 500 response.\n", err.stack);
+    }
+  });
+
+  domain.add(req);
+  domain.add(res);
+  domain.run(next);
 });
